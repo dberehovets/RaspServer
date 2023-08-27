@@ -1,16 +1,16 @@
-import os, time
+import os
+import time
 from mimetypes import guess_type
 from pathlib import Path
 from random import randint
 from typing import Annotated
 
-from starlette.responses import RedirectResponse
-
 from fast_app import templates
-from fastapi import APIRouter, Request, HTTPException, Response, Form, UploadFile
-from utils import get_file_preview, PREVIEW_CACHE_PATH
+from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
+from settings import settings
+from starlette.responses import RedirectResponse
+from utils import PREVIEW_CACHE_PATH, get_file_preview
 
-from services.settings import settings
 
 tiles_router = APIRouter()
 data_path = Path(settings.DATA_PATH)
