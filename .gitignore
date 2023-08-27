@@ -162,3 +162,4 @@ cython_debug/
 config_local.py
 .isort.cfg
 .preview_cache
+.DS_Store

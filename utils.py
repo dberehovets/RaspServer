@@ -17,7 +17,7 @@ def get_file_preview(path: Path) -> str:
         try:
             file_path = manager.get_jpeg_preview(str(path))
             file_path = file_path.replace(os.path.abspath(static_dir.directory), '')
-        except UnsupportedMimeType:
+        except (UnsupportedMimeType, Exception):
             file_path = '/icons/file-icon.png'
     else:
         file_path = '/icons/folder-icon.png'

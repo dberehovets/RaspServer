@@ -15,6 +15,10 @@ from utils import PREVIEW_CACHE_PATH, get_file_preview
 tiles_router = APIRouter()
 data_path = Path(settings.DATA_PATH)
 
+_EXCLUDE_NAMES = frozenset({
+    "'System Volume Information'"
+})
+
 
 def _get_path(file_path: str | None) -> Path:
     path = data_path
@@ -54,7 +58,7 @@ def tiles(request: Request, path_key: str | None = None):
     data = []
     sorted_dir = sorted(path.iterdir(), key=os.path.getmtime, reverse=True)
     for item in sorted(sorted_dir, key=lambda x: x.is_file()):
-        if not item.name.startswith('.'):
+        if not (item.name.startswith('.') or item.name in _EXCLUDE_NAMES):
             item_path = str(item).replace(settings.DATA_PATH, '')
             if item_path.startswith('/'):
                 item_path = item_path[1:]
