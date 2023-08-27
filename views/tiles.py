@@ -16,7 +16,7 @@ tiles_router = APIRouter()
 data_path = Path(settings.DATA_PATH)
 
 _EXCLUDE_NAMES = frozenset({
-    "'System Volume Information'"
+    "System Volume Information"
 })
 
 

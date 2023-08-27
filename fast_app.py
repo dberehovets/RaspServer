@@ -3,7 +3,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 
-app = FastAPI()
+app = FastAPI(debug=True)
 
 static_dir = StaticFiles(directory="static")
 app.mount("/static", static_dir, name="static")
