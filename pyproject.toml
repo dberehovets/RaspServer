@@ -6,7 +6,7 @@ authors = ["Dmytro Berehovets <dberehovets@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.10"
 fastapi = "0.101.1"
 bootstrap-py = "2.0.0"
 uvicorn = "0.23.2"
