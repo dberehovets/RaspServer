@@ -1,12 +1,16 @@
 from fastapi import FastAPI
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
+from utils import random_string
 
 
 app = FastAPI(debug=True)
 
 static_dir = StaticFiles(directory="static")
 app.mount("/static", static_dir, name="static")
+
+app.add_middleware(SessionMiddleware, secret_key=random_string())
 
 templates = Jinja2Templates(directory="templates")
 

@@ -1,4 +1,6 @@
 import os
+import re
+import shutil
 import time
 from mimetypes import guess_type
 from pathlib import Path
@@ -7,9 +9,11 @@ from typing import Annotated
 
 from fast_app import templates
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
+from pydantic import BaseModel, conlist, constr, field_validator
 from settings import settings
 from starlette.responses import RedirectResponse
-from utils import PREVIEW_CACHE_PATH, get_file_preview
+
+from utils import PREVIEW_CACHE_PATH, Flash, get_file_preview
 
 
 tiles_router = APIRouter()
@@ -20,12 +24,40 @@ _EXCLUDE_NAMES = frozenset({
 })
 
 
-def _get_path(file_path: str | None) -> Path:
+class DeleteModel(BaseModel):
+    paths: conlist(constr(min_length=1, max_length=500), min_length=1)
+
+    @field_validator('paths')
+    def validate_paths(cls, val: list[str]) -> list[str]:
+        for p in val:
+            if not _get_full_path(p):
+                raise ValueError(f"File of path '{p}' not found.")
+        return val
+
+
+class RenameModel(BaseModel):
+    path: constr(min_length=1, max_length=500)
+    new_name: constr(min_length=3, max_length=100)
+
+    @field_validator('path')
+    def validate_path(cls, val: str) -> str:
+        if not _get_full_path(val):
+            raise ValueError(f"File of path '{val}' not found.")
+        return val
+
+    @field_validator('new_name')
+    def validate_new_name(cls, val: str) -> str:
+        if not re.match(r'[A-Za-z0-9_\- ]', val):
+            raise ValueError(f"Name contains not allowed symbols. Use A-Z, a-z, 0-9, - and space")
+        return val
+
+
+def _get_full_path(file_path: str | None) -> Path | None:
     path = data_path
     if file_path:
         path = data_path / file_path
         if not path.exists():
-            raise HTTPException(status_code=404, detail="Item not found")
+            return
 
     return path
 
@@ -35,6 +67,23 @@ def _get_url(method: str, path_key: str | None = None) -> str:
         return tiles_router.url_path_for(method, path_key=path_key)
 
     return tiles_router.url_path_for(method)
+
+
+def _get_breadcrumb(path_key: str | None = None) -> list[dict]:
+    if path_key is None:
+        return []
+
+    result = [dict(name='Home', url=_get_url('tiles'))]
+    names = path_key.split('/')
+    names_len = len(names)
+    for idx in range(names_len):
+        sublist = names[:idx + 1]
+        result.append(dict(
+            name=sublist[-1],
+            url=_get_url('tiles', path_key='/'.join(sublist)) if idx + 1 < names_len else None
+        ))
+
+    return result
 
 
 def _clear_preview_cache():
@@ -50,7 +99,10 @@ def _clear_preview_cache():
 def tiles(request: Request, path_key: str | None = None):
     _clear_preview_cache()
 
-    path = _get_path(path_key)
+    path = _get_full_path(path_key)
+    if not path:
+        raise HTTPException(status_code=404, detail="Item not found")
+
     if path.is_file():
         content_type, _ = guess_type(path.name)
         return Response(path.read_bytes(), media_type=content_type)
@@ -63,6 +115,7 @@ def tiles(request: Request, path_key: str | None = None):
             if item_path.startswith('/'):
                 item_path = item_path[1:]
             data.append(dict(
+                path_key=item_path,
                 name=item.name[:50],
                 img_url=get_file_preview(item),
                 url=_get_url('tiles', path_key=item_path)
@@ -71,18 +124,26 @@ def tiles(request: Request, path_key: str | None = None):
     return templates.TemplateResponse("plates.html", dict(
         request=request,
         data=data,
+        breadcrumb=_get_breadcrumb(path_key),
         url_new_folder=_get_url('create_folder', path_key=path_key),
-        url_add_files=_get_url('add_files', path_key=path_key)
+        url_add_files=_get_url('add_files', path_key=path_key),
+        url_delete_items=_get_url('delete_items'),
+        url_rename_item=_get_url('rename_item'),
     ))
 
 
 @tiles_router.post('/create-folder')
 @tiles_router.post('/create-folder/{path_key:path}')
 def create_folder(
+    request: Request,
     name: Annotated[str, Form(min_length=1, max_length=100, pattern=r'[A-Za-z0-9_\- ]')],
     path_key: str | None = None
 ):
-    path = _get_path(path_key)
+    path = _get_full_path(path_key)
+    if not path:
+        Flash.error(request, 'Path not found')
+        return RedirectResponse(_get_url('tiles', path_key=path_key), status_code=302)
+
     path = path / name
     path.mkdir(exist_ok=True)
 
@@ -91,8 +152,11 @@ def create_folder(
 
 @tiles_router.post('/add-files')
 @tiles_router.post('/add-files/{path_key:path}')
-def add_files(files: list[UploadFile], path_key: str | None = None):
-    path = _get_path(path_key)
+def add_files(request: Request, files: list[UploadFile], path_key: str | None = None):
+    path = _get_full_path(path_key)
+    if not path:
+        Flash.error(request, 'Path not found')
+        return RedirectResponse(_get_url('tiles', path_key=path_key), status_code=302)
 
     for up_f in files:
         f_path = path / up_f.filename
@@ -100,3 +164,34 @@ def add_files(files: list[UploadFile], path_key: str | None = None):
             f.write(up_f.file.read())
 
     return RedirectResponse(_get_url('tiles', path_key=path_key), status_code=302)
+
+
+@tiles_router.post('/delete-items')
+def delete_items(data: DeleteModel):
+    for p in data.paths:
+        path = _get_full_path(p)
+        if path.is_file():
+            try:
+                os.remove(path)
+            except OSError as err:
+                return {"status": "error", "detail": str(err)}
+        else:
+            shutil.rmtree(path)
+
+    return {"status": "ok", "detail": "Successfully removed"}
+
+
+@tiles_router.post('/rename-item')
+def rename_item(data: RenameModel):
+    item = _get_full_path(data.path)
+    new_name = data.new_name
+    if item.is_file():
+        f_type = item.name.rsplit('.', 1)[-1]
+        if f_type != new_name.rsplit('.', 1)[-1]:
+            new_name += f'.{f_type}'
+
+    new_path = Path(str(item).replace(item.name, new_name))
+
+    item.rename(new_path)
+
+    return {"status": "ok"}
