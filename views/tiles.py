@@ -7,8 +7,10 @@ from pathlib import Path
 from random import randint
 from typing import Annotated
 
+import magic
 from fast_app import templates
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
+from fastapi.params import Header
 from pydantic import BaseModel, conlist, constr, field_validator
 from settings import settings
 from starlette.responses import RedirectResponse
@@ -22,6 +24,7 @@ data_path = Path(settings.DATA_PATH)
 _EXCLUDE_NAMES = frozenset({
     "System Volume Information"
 })
+_VIDEO_CHUNK_SIZE = 69861375
 
 
 class DeleteModel(BaseModel):
@@ -94,9 +97,18 @@ def _clear_preview_cache():
                 os.remove(file_path)
 
 
+def _is_file_video(item: Path):
+    return item.is_file() and magic.from_file(item, mime=True).startswith('video')
+
+
+def _get_video_source(request: Request, item: Path, path_key: str) -> str | None:
+    if _is_file_video(item):
+        return str(request.url_for('video_source', path_key=path_key))
+
+
 @tiles_router.get("/")
 @tiles_router.get("/storage/{path_key:path}")
-def tiles(request: Request, path_key: str | None = None):
+async def tiles(request: Request, path_key: str | None = None):
     _clear_preview_cache()
 
     path = _get_full_path(path_key)
@@ -118,7 +130,8 @@ def tiles(request: Request, path_key: str | None = None):
                 path_key=item_path,
                 name=item.name[:50],
                 img_url=get_file_preview(item),
-                url=_get_url('tiles', path_key=item_path)
+                url=_get_url('tiles', path_key=item_path),
+                video_source=_get_video_source(request, item, item_path)
             ))
 
     return templates.TemplateResponse("plates.html", dict(
@@ -134,7 +147,7 @@ def tiles(request: Request, path_key: str | None = None):
 
 @tiles_router.post('/create-folder')
 @tiles_router.post('/create-folder/{path_key:path}')
-def create_folder(
+async def create_folder(
     request: Request,
     name: Annotated[str, Form(min_length=1, max_length=100, pattern=r'[A-Za-z0-9_\- ]')],
     path_key: str | None = None
@@ -152,7 +165,7 @@ def create_folder(
 
 @tiles_router.post('/add-files')
 @tiles_router.post('/add-files/{path_key:path}')
-def add_files(request: Request, files: list[UploadFile], path_key: str | None = None):
+async def add_files(request: Request, files: list[UploadFile], path_key: str | None = None):
     path = _get_full_path(path_key)
     if not path:
         Flash.error(request, 'Path not found')
@@ -167,7 +180,7 @@ def add_files(request: Request, files: list[UploadFile], path_key: str | None = 
 
 
 @tiles_router.post('/delete-items')
-def delete_items(data: DeleteModel):
+async def delete_items(data: DeleteModel):
     for p in data.paths:
         path = _get_full_path(p)
         if path.is_file():
@@ -182,7 +195,7 @@ def delete_items(data: DeleteModel):
 
 
 @tiles_router.post('/rename-item')
-def rename_item(data: RenameModel):
+async def rename_item(data: RenameModel):
     item = _get_full_path(data.path)
     new_name = data.new_name
     if item.is_file():
@@ -195,3 +208,29 @@ def rename_item(data: RenameModel):
     item.rename(new_path)
 
     return {"status": "ok"}
+
+
+@tiles_router.get('/video-source/{path_key:path}')
+async def video_source(path_key: str, range: str | None = Header(None)):
+    item = _get_full_path(path_key)
+    if not (item and item.is_file() and _is_file_video(item)):
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    if range is None:
+        return Response(open(item, "rb").read(), status_code=200)
+
+    file_size = item.stat().st_size
+    start, end = range.replace("bytes=", "").split("-")
+    start = int(start)
+    end = int(end) if end else min(start + _VIDEO_CHUNK_SIZE, file_size - 1)
+
+    headers = {
+        'Accept-Ranges': 'bytes',
+        'Content-Range': f'bytes {str(start)}-{str(end)}/{file_size}'
+    }
+
+    with open(item, "rb") as video:
+        video.seek(start)
+        data = video.read(end - start + 1)
+
+    return Response(data, headers=headers, status_code=206)

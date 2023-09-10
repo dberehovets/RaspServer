@@ -22,11 +22,18 @@
     {% for item in data %}
       <div class="col text-center">
         <div class="card border-0" data-path="{{ item['path_key'] }}">
-          <a href="{{ item['url'] }}">
-            <div style="height: 7em;" class="d-flex flex-grow-1 justify-content-center align-items-center">
+          {% if item['video_source'] %}
+            <div style="height: 7em; cursor: pointer;" class="d-flex flex-grow-1 justify-content-center align-items-center"
+                 data-bs-toggle="modal" data-bs-target="#video-modal" data-source="{{ item['video_source'] }}">
               <img src="{{ item['img_url'] }}" alt="image" style="max-width: 100%;max-height: 100%;">
             </div>
-          </a>
+          {% else %}
+            <a href="{{ item['url'] }}">
+              <div style="height: 7em;" class="d-flex flex-grow-1 justify-content-center align-items-center">
+                <img src="{{ item['img_url'] }}" alt="image" style="max-width: 100%;max-height: 100%;">
+              </div>
+            </a>
+          {% endif %}
           <div class="card-body row">
             <div class="col-10 card-title" style="padding-right: 0;">{{ item['name'] }}</div>
             <div class="dropdown col-2 dropdown-of-item" style="padding: 0;">
@@ -60,6 +67,14 @@
             <button type="button" class="btn btn-primary" id="rename-item-modal-save">Save</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="video-modal">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <video controls></video>
       </div>
     </div>
   </div>
@@ -210,6 +225,22 @@
             }
           })
         })
+      })
+    })();
+
+    // video modal
+    (function () {
+      let modal = document.getElementById('video-modal')
+      let video = modal.querySelector('video')
+      modal.addEventListener('show.bs.modal', function (ev) {
+        let trig = ev.relatedTarget
+        video.src = trig.getAttribute('data-source')
+      })
+
+      modal.addEventListener('hide.bs.modal', function () {
+        video.pause()
+        video.currentTime = 0;
+        video.removeAttribute('src')
       })
     })();
   </script>
