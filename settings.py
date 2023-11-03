@@ -22,7 +22,5 @@ class Settings(BaseSettings):
                   f'following fields: {", ".join(keys)}')
             exit()
 
-        self._verify_parameters()
-
 
 settings = Settings()

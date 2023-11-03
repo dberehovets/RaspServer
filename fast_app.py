@@ -17,8 +17,10 @@ templates = Jinja2Templates(directory="templates")
 
 def register_routes(fast_app: FastAPI):
     from views.tiles import tiles_router
+    from views.camera import camera_router
 
     fast_app.include_router(tiles_router)
+    fast_app.include_router(camera_router, prefix='/camera')
 
 
 register_routes(app)

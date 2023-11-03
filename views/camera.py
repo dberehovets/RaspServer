@@ -1,24 +1,23 @@
-import picamera
-from fastapi import FastAPI
-from starlette.responses import StreamingResponse
+from picamera2 import Picamera2, CameraConfiguration
+import cv2
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 
 
-class Camera:
-    def __init__(self):
-        self.camera = picamera.PiCamera()
-
-    def read(self):
-        return self.camera.capture(format="jpeg")
+camera_router = APIRouter()
 
 
-app = FastAPI()
+camera = Picamera2()
+camera_config = camera.create_preview_configuration()
+camera.configure(camera_config)
 
 
-@app.get("/stream", response_class=StreamingResponse)
-async def stream():
-    camera = Camera()
+@camera_router.get("/")
+def stream():
 
-    while True:
-        frame = await camera.read()
+    async def generate():
+        while True:
+            frame = await camera.capture_frame()
+            yield frame.tobytes()
 
-        yield frame
+    return StreamingResponse(generate())
