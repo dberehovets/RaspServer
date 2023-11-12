@@ -103,7 +103,7 @@ def _is_file_video(item: Path):
 
 def _get_video_source(request: Request, item: Path, path_key: str) -> str | None:
     if _is_file_video(item):
-        return str(request.url_for('video_source', path_key=path_key))
+        return str(request.url_for('tiles:video_source', path_key=path_key))
 
 
 @tiles_router.get("/")

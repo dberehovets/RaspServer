@@ -2,13 +2,13 @@ import io
 import time
 from threading import Condition
 
-from fastapi import APIRouter, WebSocket, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
 from fast_app import templates
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
+from libcamera import Transform
 from picamera2 import Picamera2
 from picamera2.encoders import JpegEncoder
 from picamera2.outputs import FileOutput
-from libcamera import Transform
 
 
 camera_router = APIRouter()
