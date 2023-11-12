@@ -1,23 +1,70 @@
-from picamera2 import Picamera2, CameraConfiguration
-import cv2
-from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
+import io
+import time
+from threading import Condition
+
+from fastapi import APIRouter, WebSocket, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fast_app import templates
+from picamera2 import Picamera2
+from picamera2.encoders import JpegEncoder
+from picamera2.outputs import FileOutput
+from libcamera import Transform
 
 
 camera_router = APIRouter()
 
 
-camera = Picamera2()
-camera_config = camera.create_preview_configuration()
-camera.configure(camera_config)
+class StreamingOutput(io.BufferedIOBase):
+    def __init__(self):
+        self.frame = None
+        self.condition = Condition()
+
+    def write(self, buf):
+        with self.condition:
+            self.frame = buf
+            self.condition.notify_all()
+
+
+picam2 = Picamera2()
+picam2.configure(picam2.create_video_configuration(
+    main={"size": (640, 480)},
+    transform=Transform(vflip=True, hflip=True)
+))
+output = StreamingOutput()
+
+
+connects = set()
 
 
 @camera_router.get("/")
-def stream():
+async def camera_view(request: Request):
+    # print(request.url_for('camera_streaming_view'))
+    return templates.TemplateResponse('camera.html', dict(
+        request=request,
+        streaming_url=camera_router.url_path_for('camera:camera_streaming_view')
+    ))
+
+
+@camera_router.get("/streaming")
+async def camera_streaming_view(request: Request):
+    global connects
+    if not connects:
+        picam2.start_recording(JpegEncoder(), FileOutput(output))
+    elif len(connects) >= 5:
+        return 'Too many connects'
+
+    val = time.time()
+    connects.add(val)
 
     async def generate():
-        while True:
-            frame = await camera.capture_frame()
-            yield frame.tobytes()
+        while not await request.is_disconnected():
+            with output.condition:
+                output.condition.wait()
+                yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' +
+                       bytearray(output.frame) + b'\r\n')
 
-    return StreamingResponse(generate())
+        connects.remove(val)
+        if not connects:
+            picam2.stop_recording()
+
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace;boundary=frame")

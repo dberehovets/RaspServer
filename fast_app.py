@@ -7,6 +7,13 @@ from utils import random_string
 
 app = FastAPI(debug=True)
 
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    from views.camera import picam2
+
+    picam2.stop_recording()
+
 static_dir = StaticFiles(directory="static")
 app.mount("/static", static_dir, name="static")
 
